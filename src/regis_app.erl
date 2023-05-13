@@ -9,7 +9,7 @@
 -export([start/2]).
 -export([stop/1]).
 %%%-------------------------------------------------------------------
--spec start(normal, term()) ->{ok, pid()}.
+-spec start(normal, list()) ->{ok, pid()}.
 start(_StartType, _StartArgs) ->
     regis_sup:start_link().
 

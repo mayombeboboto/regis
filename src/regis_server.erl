@@ -19,8 +19,8 @@
 -export([handle_info/2]).
 -export([terminate/2]).
 %%%-------------------------------------------------------------------
--record(state, { pid=gb_trees:empty(),
-                 name=gb_trees:empty() }).
+-record(state, { pids=gb_trees:empty(),
+                 names=gb_trees:empty() }).
 %%%-------------------------------------------------------------------
 %%% API Functions
 %%%-------------------------------------------------------------------
@@ -48,37 +48,37 @@ get_names() ->
 init([]) ->
     {ok, #state{}}.
 
-handle_call({register, Name, Pid}, _From, State=#state{ pid=P, name=N }) ->
-    case {gb_trees:is_defined(Pid, P), gb_trees:is_defined(Name, N)} of
+handle_call({register, Name, Pid}, _From, State=#state{ pids=Pids, names=Names }) ->
+    case {gb_trees:is_defined(Pid, Pids), gb_trees:is_defined(Name, Names)} of
         {true, _Boolean} ->
             {reply, {error, already_named}, State};
         {_Boolean, true} ->
             {reply, {error, name_taken}, State};
         {false, false} ->
             Ref = erlang:monitor(process, Pid),
-            NewState=State#state{ pid=gb_trees:insert(Pid, {Name,Ref}, P),
-                                  name=gb_trees:insert(Name, {Pid,Ref}, N) },
+            NewState=State#state{ pids=gb_trees:insert(Pid, {Name,Ref}, Pids),
+                                  names=gb_trees:insert(Name, {Pid,Ref}, Names) },
             {reply, ok, NewState}
     end;
-handle_call({unregister, Name}, _From, State=#state{ pid=P, name=N }) ->
-    case gb_trees:lookup(Name, N) of
-        {value, {Pid,Ref}} ->
+handle_call({unregister, Name}, _From, State=#state{ pids=Pids, names=Names }) ->
+    case gb_trees:lookup(Name, Names) of
+        {value, {Pid, Ref}} ->
             erlang:demonitor(Ref, [flush]),
-            NewState=#state{ pid=gb_trees:delete(Pid, P),
-                             name=gb_trees:delete(Name, N) },
+            NewState=#state{ pids=gb_trees:delete(Pid, Pids),
+                             names=gb_trees:delete(Name, Names) },
             {reply, ok, NewState};
         none ->
             {reply, ok, State}
     end;
-handle_call({whereis, Name}, _From, State=#state{ name=N }) ->
-    case gb_trees:lookup(Name, N) of
-        {value, {Pid,_}} ->
+handle_call({whereis, Name}, _From, State=#state{ names=Names }) ->
+    case gb_trees:lookup(Name, Names) of
+        {value, {Pid,_Ref}} ->
             {reply, Pid, State};
         none ->
             {reply, undefined, State}
     end;
-handle_call(get_names, _From, State=#state{ name=N }) ->
-    {reply, gb_trees:keys(N), State};
+handle_call(get_names, _From, State=#state{ names=Names }) ->
+    {reply, gb_trees:keys(Names), State};
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 handle_call(_Event, _From, State) ->
@@ -89,9 +89,9 @@ handle_cast(_Event, State) ->
     {noreply, State}.
 
 handle_info({'DOWN', Ref, process, Pid, _Reason}, State) ->
-    {value, {Name, Ref}} = gb_trees:lookup(Pid, State#state.pid),
-    NewState = State#state{ pid=gb_trees:delete(Pid, State#state.pid),
-                            name=gb_trees:delete(Name, State#state.name)},
+    {value, {Name, Ref}} = gb_trees:lookup(Pid, State#state.pids),
+    NewState = State#state{ pids=gb_trees:delete(Pid, State#state.pids),
+                            names=gb_trees:delete(Name, State#state.names)},
     {noreply, NewState};
 handle_info(_Event, State) ->
     {noreply, State}.
