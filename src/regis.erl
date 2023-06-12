@@ -4,6 +4,9 @@
 %%%-------------------------------------------------------------------
 -module(regis).
 %%%-------------------------------------------------------------------
+-export([start_link/0]).
+-export([stop/0]).
+
 -export([register/2]).
 -export([unregister/1]).
 -export([whereis/1]).
@@ -14,8 +17,14 @@
                              {error, name_taken} |
                              ok.
 %%%-------------------------------------------------------------------
--spec register(name(), pid()) -> register_response().
-register(Name, Pid) -> regis_server:register(Name, Pid).
+-spec start_link() -> {ok, pid()}.
+start_link() -> regis_server:start_link().
+
+-spec stop() -> no_return().
+stop() -> regis_server:stop().
+
+-spec register(pid(), name()) -> register_response().
+register(Pid, Name) -> regis_server:register(Pid, Name).
 
 -spec unregister(name()) -> ok.
 unregister(Name) -> regis_server:unregister(Name).

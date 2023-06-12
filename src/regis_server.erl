@@ -30,7 +30,7 @@ start_link() ->
 stop() ->
     gen_server:call(?MODULE, stop).
 
-register(Name, Pid) when is_pid(Pid) ->
+register(Pid, Name) when is_pid(Pid) ->
     gen_server:call(?MODULE, {register, Name, Pid}).
 
 unregister(Name) ->
