@@ -18,6 +18,14 @@ register_test_() ->
      {"An undefined name should return 'undefined' to crash calls",
       ?SETUP(fun noregister/1)}].
 
+unregister_test_() ->
+    [{"A process that was registered can be registered again iff it was unregistered between both calls",
+      ?SETUP(fun re_un_register/1)},
+     {"Unregistering never crashes",
+      ?SETUP(fun unregister_nocrash/1)},
+     {"A crash unregisters a process",
+      ?SETUP(fun crash_unregisters/1)}].
+
 %%%%%%%%%%%%%%%%%%%%%%%
 %%% SETUP FUNCTIONS %%%
 %%%%%%%%%%%%%%%%%%%%%%%
@@ -60,6 +68,25 @@ registered_list(_ServerPid) ->
 noregister(_ServerPid) ->
     [?_assertError(badarg, regis_server:whereis(make_ref()) ! hi),
      ?_assertEqual(undefined, regis_server:whereis(make_ref()))].
+
+re_un_register(_ServerPid) ->
+    Ref = make_ref(),
+    L = [regis_server:register(self(), Ref),
+         regis_server:register(self(), make_ref()),
+         regis_server:unregister(Ref),
+         regis_server:register(self(), make_ref())],
+    [?_assertEqual([ok, {error, already_named}, ok, ok], L)].
+
+unregister_nocrash(_ServerPid) ->
+    ?_assertEqual(ok, regis_server:unregister(make_ref())).
+
+crash_unregisters(_ServerPid) ->
+    Ref = make_ref(),
+    Pid = spawn(fun() -> callback(Ref) end),
+    timer:sleep(150),
+    Pid = regis_server:whereis(Ref),
+    exit(Pid, kill),
+    ?_assertEqual(undefined, regis_server:whereis(Ref)).
 
 %%%%%%%%%%%%%%%%%%%%%%%%
 %%% HELPER FUNCTIONS %%%
