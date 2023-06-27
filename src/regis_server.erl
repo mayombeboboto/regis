@@ -19,8 +19,7 @@
 -export([handle_info/2]).
 -export([terminate/2]).
 %%%-------------------------------------------------------------------
--record(state, { pids=gb_trees:empty(),
-                 names=gb_trees:empty() }).
+-include_lib("stdlib/include/ms_transform.hrl").
 %%%-------------------------------------------------------------------
 %%% API Functions
 %%%-------------------------------------------------------------------
@@ -37,64 +36,62 @@ unregister(Name) ->
     gen_server:call(?MODULE, {unregister, Name}).
 
 whereis(Name) ->
-    gen_server:call(?MODULE, {whereis, Name}).
+    case ets:lookup(?MODULE, Name) of
+        [{Name, Pid, _Ref}] -> Pid;
+        [] -> undefined
+    end.
 
 get_names() ->
-    gen_server:call(?MODULE, get_names).
+    MatchSpec = ets:fun2ms(fun({Name, _Pid, _Ref}) -> Name end),
+    ets:select(?MODULE, MatchSpec).
 
 %%%-------------------------------------------------------------------
 %%% Callback Functions
 %%%-------------------------------------------------------------------
 init([]) ->
-    {ok, #state{}}.
+    ?MODULE = ets:new(?MODULE, [set, named_table, protected]),
+    {ok, ?MODULE}.
 
-handle_call({register, Name, Pid}, _From, State=#state{ pids=Pids, names=Names }) ->
-    case {gb_trees:is_defined(Pid, Pids), gb_trees:is_defined(Name, Names)} of
-        {true, _Boolean} ->
-            {reply, {error, already_named}, State};
-        {_Boolean, true} ->
-            {reply, {error, name_taken}, State};
-        {false, false} ->
+handle_call({register, Name, Pid}, _From, TableID) ->
+    MatchSpec = ets:fun2ms(fun({N, P, _Ref}) when N==Name; P==Pid -> {N, P} end),
+    case ets:select(TableID, MatchSpec) of
+        [] ->
             Ref = erlang:monitor(process, Pid),
-            NewState=State#state{ pids=gb_trees:insert(Pid, {Name,Ref}, Pids),
-                                  names=gb_trees:insert(Name, {Pid,Ref}, Names) },
-            {reply, ok, NewState}
+            ets:insert(TableID, {Name, Pid, Ref}),
+            {reply, ok, TableID};
+        [{Name, _P}|_Tail] ->
+            {reply, {error, name_taken}, TableID};
+        [{_N, Pid}|_Tail] ->
+            {reply, {error, already_named}, TableID}
     end;
-handle_call({unregister, Name}, _From, State=#state{ pids=Pids, names=Names }) ->
-    case gb_trees:lookup(Name, Names) of
-        {value, {Pid, Ref}} ->
+handle_call({unregister, Name}, _From, TableID) ->
+    case ets:lookup(TableID, Name) of
+        [{Name, _Pid, Ref}] ->
             erlang:demonitor(Ref, [flush]),
-            NewState=#state{ pids=gb_trees:delete(Pid, Pids),
-                             names=gb_trees:delete(Name, Names) },
-            {reply, ok, NewState};
-        none ->
-            {reply, ok, State}
+            ets:delete(TableID, Name),
+            {reply, ok, TableID};
+        [] ->
+            {reply, ok, TableID}
     end;
-handle_call({whereis, Name}, _From, State=#state{ names=Names }) ->
-    case gb_trees:lookup(Name, Names) of
-        {value, {Pid,_Ref}} ->
-            {reply, Pid, State};
-        none ->
-            {reply, undefined, State}
-    end;
-handle_call(get_names, _From, State=#state{ names=Names }) ->
-    {reply, gb_trees:keys(Names), State};
-handle_call(stop, _From, State) ->
-    {stop, normal, ok, State};
-handle_call(_Event, _From, State) ->
-    {noreply, State}.
+handle_call(stop, _From, TableID) ->
+    ets:delete(TableID),
+    {stop, normal, ok, TableID};
+handle_call(_Event, _From, TableID) ->
+    {noreply, TableID}.
 
 
-handle_cast(_Event, State) ->
-    {noreply, State}.
+handle_cast(_Event, TableID) ->
+    {noreply, TableID}.
 
-handle_info({'DOWN', Ref, process, Pid, _Reason}, State) ->
-    {value, {Name, Ref}} = gb_trees:lookup(Pid, State#state.pids),
-    NewState = State#state{ pids=gb_trees:delete(Pid, State#state.pids),
-                            names=gb_trees:delete(Name, State#state.names)},
-    {noreply, NewState};
+handle_info({'DOWN', Ref, process, _Pid, _Reason}, TableID) ->
+    ets:match_delete(TableID, {'_', '_', Ref}),
+    {noreply, TableID};
 handle_info(_Event, State) ->
     {noreply, State}.
 
-terminate(_Reason, _State) ->
+terminate(_Reason, _TableID) ->
     ok.
+
+%%%-------------------------------------------------------------------
+%%% Internal Functions
+%%%-------------------------------------------------------------------
